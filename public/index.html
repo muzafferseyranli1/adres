@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adres Bulucu</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --line:#dfe2e8; --ink:#1c2330; --mute:#667085; --accent:#1857d6; --accent-bg:#e9f0ff; --ok:#0f7b46; --warn-bg:#fff6dd; --warn:#8a5a00; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.4 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  .app { display: grid; grid-template-columns: 400px 360px 1fr; height: 100vh; }
+  .col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--card); }
+  .pad { padding: 12px 14px; }
+  .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--mute); margin: 14px 14px 6px; display: flex; justify-content: space-between; gap: 8px; }
+  h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  input, button { font: inherit; }
+  input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #q { font-size: 16px; padding: 10px 12px; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  button { cursor: pointer; border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 7px 12px; color: var(--ink); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .hint { color: var(--mute); font-size: 12px; margin-top: 6px; }
+  .banner { background: var(--warn-bg); color: var(--warn); padding: 8px 14px; font-size: 12.5px; border-bottom: 1px solid #f0dfa8; }
+  .item { display: block; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 9px 14px; background: #fff; }
+  .item:hover, .item.on { background: var(--accent-bg); }
+  .item b { display: block; font-weight: 600; }
+  .item span { color: var(--mute); font-size: 12.5px; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 10px; background: #eef0f4; color: #475066; margin-right: 6px; vertical-align: 1px; }
+  .tag.street { background: #e4f5ec; color: var(--ok); }
+  .tag.neighborhood { background: #efe9ff; color: #5a35b8; }
+  .empty { padding: 10px 14px; color: var(--mute); font-size: 13px; }
+  .addr { margin: 12px 14px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .addr .f { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 6px; padding: 7px 10px; border-top: 1px solid var(--line); }
+  .addr .f:first-child { border-top: 0; }
+  .addr .f label { color: var(--mute); font-size: 12px; }
+  .addr .f .v { font-weight: 600; overflow-wrap: anywhere; }
+  .addr .f .v.none { color: #b3b9c6; font-weight: 400; }
+  .addr .f button { border: 0; padding: 0 4px; color: var(--mute); background: none; }
+  .addr .f input { padding: 4px 8px; }
+  .chips { padding: 0 14px 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 9px; border-radius: 14px; font-size: 12.5px; }
+  .place { margin: 0 14px 6px; padding: 9px 11px; background: #f7f8fa; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+  .place b { display: block; margin-bottom: 2px; }
+  #map { flex: 1; min-height: 300px; }
+  .mapcol { display: flex; flex-direction: column; min-height: 0; }
+  .maphint { padding: 6px 12px; font-size: 12px; color: var(--mute); background: var(--card); border-bottom: 1px solid var(--line); }
+  @media (max-width: 1100px) { .app { grid-template-columns: 1fr; height: auto; } .col { border-right: 0; border-bottom: 1px solid var(--line); } .scroll { max-height: 420px; } #map { height: 420px; flex: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 1. Arama -->
+  <section class="col">
+    <div id="banner" class="banner" hidden></div>
+    <div class="pad" style="border-bottom:1px solid var(--line)">
+      <h1>Adres Bulucu</h1>
+      <input id="q" type="text" autocomplete="off" placeholder="Müşteri ne dediyse yazın…" autofocus>
+      <div class="row">
+        <input id="il" type="text" list="ilList" placeholder="İl (isteğe bağlı)" autocomplete="off">
+        <input id="ilce" type="text" list="ilceList" placeholder="İlçe (isteğe bağlı)" autocomplete="off">
+        <button id="go" class="primary">Ara</button>
+      </div>
+      <datalist id="ilList"></datalist><datalist id="ilceList"></datalist>
+      <div class="hint">Örn: <i>yıldız sitesi çankaya</i> · <i>gül sokak kadıköy</i> · <i>ulu cami bursa</i> · <i>bağdat caddesi</i></div>
+      <div id="scope" class="hint"></div>
+    </div>
+    <div class="scroll">
+      <h2>Resmi adres kayıtları <small id="aptStatus"></small></h2>
+      <div id="aptRes"><div class="empty">Sokak, mahalle veya ilçe adı yazıp arayın.</div></div>
+      <h2>Yer / site / cami / işyeri <small id="poiStatus"></small></h2>
+      <div id="poiRes"><div class="empty">Site, cami, okul gibi bir yer adı yazıp arayın.</div></div>
+    </div>
+  </section>
+
+  <!-- 2. Seçilen adres -->
+  <section class="col">
+    <h2>Adres <small><button id="copy" style="padding:2px 8px">Kopyala</button> <button id="clear" style="padding:2px 8px">Temizle</button></small></h2>
+    <div class="addr" id="addr"></div>
+    <div id="place"></div>
+    <div class="scroll" id="detail"></div>
+  </section>
+
+  <!-- 3. Harita -->
+  <section class="mapcol">
+    <div class="maphint">Haritada bir noktaya tıklayarak o noktanın mahallesini ve yakındaki sokakları görebilirsiniz. · Veriler: apiturkiye.com, OpenStreetMap, Yandex. Sonuçlar bilgi amaçlıdır.</div>
+    <div id="map"></div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Türkçe karakter ve büyük/küçük harf farkını yok sayan karşılaştırma anahtarı
+function norm(s) {
+  return String(s ?? '').toLocaleLowerCase('tr')
+    .replace(/[çÇ]/g, 'c').replace(/[ğĞ]/g, 'g').replace(/[ıİ]/g, 'i').replace(/[öÖ]/g, 'o').replace(/[şŞ]/g, 's').replace(/[üÜ]/g, 'u')
+    .replace(/[âÂ]/g, 'a').replace(/[îÎ]/g, 'i').replace(/[ûÛ]/g, 'u')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+const mahNorm = s => norm(s).replace(/\b(mahallesi|mahalle|mah|mh|koyu|koy)\b/g, ' ').replace(/\s+/g, ' ').trim();
+const title = s => String(s ?? '').toLocaleLowerCase('tr').replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('tr'));
+
+let cfg = { apt: false, yandex: false, google: false };
+let sel = { il: null, ilce: null, mahalle: null, sokak: null, kapi: null }; // her biri {code?, name}
+let searchSeq = 0, placeSeq = 0;
+
+/* ---------------- apiturkiye.com (sunucu üzerinden) ---------------- */
+const aptMem = new Map();
+async function apt(path, params) {
+  const qs = params ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')) : '';
+  const url = '/api/apt/' + path + qs;
+  if (aptMem.has(url)) return aptMem.get(url);
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j?.error?.message || ('Hata ' + r.status)); e.code = j?.error?.code; throw e; }
+  aptMem.set(url, j);
+  return j;
+}
+async function aptAll(path, max = 30) { // cursor ile tüm sayfalar
+  let out = [], cursor = null;
+  for (let i = 0; i < max; i++) {
+    const j = await apt(path, { limit: 100, cursor });
+    out = out.concat(j.data || []);
+    cursor = j.meta?.nextCursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+const provinces = () => apt('provinces').then(j => j.data || []);
+const districts = code => apt(`provinces/${code}/districts`).then(j => j.data || []);
+const neighborhoods = code => apt(`districts/${code}/neighborhoods`).then(j => j.data || []);
+const mahLabel = n => { const v = n.locality?.village?.name; return title(n.name) + (v && norm(v) !== 'merkez' && norm(v) !== norm(n.name) ? ` (${title(v)})` : ''); };
+
+/* ---------------- Açık harita kaynakları (anahtar gerektirmez) ---------------- */
+let nomChain = Promise.resolve(), nomLast = 0;
+function nominatim(path, params) { // kullanım kuralı: saniyede en fazla 1 istek
+  const run = async () => {
+    const wait = 1100 - (Date.now() - nomLast); if (wait > 0) await sleep(wait);
+    nomLast = Date.now();
+    const r = await fetch(`https://nominatim.openstreetmap.org/${path}?` + new URLSearchParams({ format: 'jsonv2', addressdetails: 1, 'accept-language': 'tr', ...params }));
+    if (!r.ok) throw new Error('Nominatim ' + r.status);
+    return r.json();
+  };
+  const p = nomChain.then(run, run); nomChain = p.catch(() => {}); return p;
+}
+async function searchNominatim(q) {
+  const a = await nominatim('search', { q, countrycodes: 'tr', limit: 10 });
+  return a.map(it => ({ src: 'OSM', name: it.name || it.display_name.split(',')[0], desc: it.display_name, lat: +it.lat, lon: +it.lon, addr: it.address, kind: it.type }));
+}
+async function searchPhoton(q) {
+  const r = await fetch('https://photon.komoot.io/api/?' + new URLSearchParams({ q, limit: 12, bbox: '25.6,35.8,44.9,42.2' }));
+  if (!r.ok) throw new Error('Photon ' + r.status);
+  const j = await r.json();
+  return (j.features || []).filter(f => f.properties.countrycode === 'TR').map(f => {
+    const p = f.properties;
+    return { src: 'OSM', name: p.name || [p.street, p.housenumber].filter(Boolean).join(' '), desc: [p.street, p.locality, p.district, p.city, p.county, p.state].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '), lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], kind: p.osm_value };
+  }).filter(x => x.name);
+}
+async function searchYandex(q) {
+  if (!cfg.yandex) return [];
+  const r = await fetch('/api/yandex/search?' + new URLSearchParams({ q }));
+  if (!r.ok) throw new Error('Yandex ' + r.status);
+  const j = await r.json();
+  return (j.response?.GeoObjectCollection?.featureMember || []).map(m => {
+    const g = m.GeoObject, md = g.metaDataProperty?.GeocoderMetaData;
+    if (md?.Address?.country_code && md.Address.country_code !== 'TR') return null;
+    const [lon, lat] = String(g.Point?.pos || '').split(' ').map(Number);
+    return { src: 'Yandex', name: g.name, desc: g.description || md?.text, lat, lon, kind: md?.kind };
+  }).filter(x => x && x.name && Number.isFinite(x.lat) && Number.isFinite(x.lon));
+}
+async function searchGoogle(q) {
+  if (!cfg.google) return [];
+  const r = await fetch('/api/google/search?' + new URLSearchParams({ q }));
+  if (!r.ok) throw new Error('Google ' + r.status);
+  const j = await r.json();
+  return (j.places || []).map(p => ({ src: 'Google', name: p.displayName?.text, desc: p.formattedAddress, lat: p.location?.latitude, lon: p.location?.longitude, kind: p.primaryTypeDisplayName?.text })).filter(x => x.name && x.lat);
+}
+async function nearbyStreets(lat, lon) {
+  // Photon ters arama: noktanın ~300 m çevresindeki adı kayıtlı yollar
+  const r = await fetch('https://photon.komoot.io/reverse?' + new URLSearchParams({ lat, lon, limit: 50, radius: 0.3, osm_tag: 'highway' }), { signal: AbortSignal.timeout(9000) });
+  if (!r.ok) throw new Error('Photon ' + r.status);
+  const j = await r.json();
+  const best = new Map();
+  for (const f of j.features || []) {
+    const p = f.properties;
+    if (p.osm_key !== 'highway' || !p.name || /^(bus_stop|platform|rest_area|services)$/.test(p.osm_value)) continue;
+    const d = L.latLng(lat, lon).distanceTo([f.geometry.coordinates[1], f.geometry.coordinates[0]]);
+    const k = norm(p.name).replace(/\bsokagi\b/, 'sokak').replace(/\bcaddesi\b/, 'cadde'); // "X Sokak" = "X Sokağı"
+    if (!best.has(k) || best.get(k).d > d) best.set(k, { name: p.name, d });
+  }
+  return [...best.values()].sort((a, b) => a.d - b.d).slice(0, 20);
+}
+
+/* ---------------- Sorgudan il / ilçe algılama ---------------- */
+const hasWord = (hay, needle) => needle && (' ' + hay + ' ').includes(' ' + needle + ' ');
+const cutWord = (hay, needle) => (' ' + hay + ' ').replace(' ' + needle + ' ', ' ').trim();
+async function detectScope(raw) {
+  const out = { prov: null, dist: null, rest: raw, auto: [] };
+  if (!cfg.apt) return out;
+  let nq = norm(raw);
+  const ilIn = norm($('#il').value), ilceIn = norm($('#ilce').value);
+  const provs = await provinces();
+  if (ilIn) out.prov = provs.find(p => norm(p.name) === ilIn) || null;
+  else {
+    const hit = provs.filter(p => hasWord(nq, norm(p.name))).sort((a, b) => b.name.length - a.name.length)[0];
+    // Tek kelime il adıysa (örn. yalnızca "ankara") sorgudan çıkarma
+    if (hit && cutWord(nq, norm(hit.name)).length >= 3) { out.prov = hit; nq = cutWord(nq, norm(hit.name)); out.auto.push(title(hit.name)); }
+  }
+  if (out.prov) {
+    const ds = await districts(out.prov.code);
+    if (ilceIn) out.dist = ds.find(d => norm(d.name) === ilceIn) || null;
+    else {
+      const hit = ds.filter(d => norm(d.name) !== 'merkez' && hasWord(nq, norm(d.name))).sort((a, b) => b.name.length - a.name.length)[0];
+      if (hit && cutWord(nq, norm(hit.name)).length >= 3) { out.dist = hit; nq = cutWord(nq, norm(hit.name)); out.auto.push(title(hit.name)); }
+    }
+  }
+  if (out.auto.length) out.rest = nq;
+  return out;
+}
+
+/* ---------------- Arama ---------------- */
+async function runSearch() {
+  const raw = $('#q').value.trim();
+  if (raw.length < 3) { $('#scope').textContent = 'En az 3 harf yazın.'; return; }
+  const seq = ++searchSeq;
+  $('#scope').textContent = '';
+  $('#aptRes').innerHTML = cfg.apt ? '<div class="empty">Aranıyor…</div>' : '<div class="empty">Resmi adres kayıtları şu an bağlı değil.</div>';
+  $('#poiRes').innerHTML = '<div class="empty">Aranıyor…</div>';
+  $('#aptStatus').textContent = ''; $('#poiStatus').textContent = '';
+
+  if (cfg.apt) (async () => {
+    try {
+      const sc = await detectScope(raw);
+      if (seq !== searchSeq) return;
+      let res = await aptSearch(sc.rest, sc.prov?.code, sc.dist?.code);
+      // Algılanan il/ilçe aslında sokak adının parçasıysa (örn. "Ankara Caddesi") kapsamsız tekrar dene
+      if (!res.length && sc.auto.length) { res = await aptSearch(raw, null, null); sc.auto = []; }
+      if (seq !== searchSeq) return;
+      if (sc.auto.length) $('#scope').textContent = 'Sorgudan algılanan kapsam: ' + sc.auto.join(' / ');
+      renderApt(res);
+    } catch (e) { if (seq === searchSeq) $('#aptRes').innerHTML = `<div class="empty">${esc(aptErr(e))}</div>`; }
+  })();
+
+  const osmQ = [raw, $('#ilce').value.trim(), $('#il').value.trim()].filter(Boolean).join(', ');
+  const parts = await Promise.allSettled([searchGoogle(osmQ), searchYandex(osmQ), searchPhoton(osmQ), searchNominatim(osmQ)]);
+  if (seq !== searchSeq) return;
+  const seen = new Set(), pois = [];
+  for (const p of parts) if (p.status === 'fulfilled') for (const x of p.value) {
+    const k = norm(x.name) + '|' + x.lat.toFixed(3) + '|' + x.lon.toFixed(3);
+    if (!seen.has(k)) { seen.add(k); pois.push(x); }
+  }
+  const failed = parts.filter(p => p.status === 'rejected').length;
+  $('#poiStatus').textContent = failed ? `${failed} kaynak yanıt vermedi` : '';
+  renderPois(pois);
+}
+async function aptSearch(q, provinceCode, districtCode, extra = {}) {
+  if (!q || norm(q).length < 3) return [];
+  const j = await apt('autocomplete', { q, provinceCode, districtCode, types: 'all', limit: 20, ...extra });
+  return j.data || [];
+}
+function aptErr(e) {
+  return ({ no_key: 'apiturkiye anahtarı tanımlı değil (.env dosyası).', invalid_api_key: 'apiturkiye anahtarı geçersiz.', subscription_inactive: 'apiturkiye paketi henüz aktif değil.',
+    quota_exceeded: 'apiturkiye günlük kotası doldu.', daily_cap: 'Resmi kayıt araması için günlük sınır doldu; yarın tekrar deneyin.', rate_limit_exceeded: 'Çok hızlı istek gönderildi, birkaç saniye bekleyin.' })[e.code] || ('Resmi kayıt araması başarısız: ' + e.message);
+}
+
+const TYPE_TR = { street: 'Sokak', neighborhood: 'Mahalle', district: 'İlçe', province: 'İl' };
+let aptItems = [], poiItems = [];
+function aptRow(r, i) {
+  const where = [r.neighborhood?.name, r.district?.name, r.province?.name].filter(Boolean).map(title).join(' › ');
+  return `<button class="item" data-apt="${i}"><b><span class="tag ${esc(r.type)}">${TYPE_TR[r.type] || esc(r.type)}</span>${esc(title(r.name))}</b><span>${esc(where)}</span></button>`;
+}
+function renderApt(res) {
+  aptItems = res;
+  $('#aptStatus').textContent = res.length ? res.length + ' sonuç' : '';
+  $('#aptRes').innerHTML = res.length ? res.map(aptRow).join('') : '<div class="empty">Resmi kayıtlarda eşleşme yok. Aşağıdaki yer sonuçlarına bakın.</div>';
+}
+function renderPois(pois) {
+  poiItems = pois;
+  poiLayer.clearLayers();
+  $('#poiRes').innerHTML = pois.length ? pois.map((p, i) =>
+    `<button class="item" data-poi="${i}"><b><span class="tag">${esc(p.src)}</span>${esc(p.name)}</b><span>${esc(p.desc || '')}</span></button>`).join('')
+    : '<div class="empty">Haritada böyle bir yer bulunamadı. Daha az kelimeyle veya ilçe ekleyerek deneyin.</div>';
+  pois.forEach((p, i) => L.circleMarker([p.lat, p.lon], { radius: 7, color: '#1857d6', weight: 2, fillOpacity: .25 }).bindTooltip(p.name).on('click', () => pickPoi(i)).addTo(poiLayer));
+  if (pois.length) map.fitBounds(L.latLngBounds(pois.map(p => [p.lat, p.lon])).pad(0.2), { maxZoom: 15 });
+}
+
+/* ---------------- Seçim ---------------- */
+const ref = o => o ? { code: o.code, name: title(o.name) } : null;
+function pickApt(r) {
+  if (r.type === 'province') { $('#il').value = title(r.name); $('#ilce').value = ''; fillIlce(); setSel({ il: ref(r), ilce: null, mahalle: null, sokak: null, kapi: null }); }
+  else if (r.type === 'district') { $('#il').value = title(r.province.name); fillIlce().then(() => $('#ilce').value = title(r.name)); setSel({ il: ref(r.province), ilce: ref(r), mahalle: null, sokak: null, kapi: null }); }
+  else if (r.type === 'neighborhood') setSel({ il: ref(r.province), ilce: ref(r.district), mahalle: ref(r), sokak: null, kapi: null });
+  else setSel({ il: ref(r.province), ilce: ref(r.district), mahalle: ref(r.neighborhood), sokak: ref(r), kapi: null });
+}
+function setSel(patch) { sel = { ...sel, ...patch }; renderAddr(); loadDetail(); }
+
+const FIELDS = [['il', 'İl'], ['ilce', 'İlçe'], ['mahalle', 'Mahalle'], ['sokak', 'Cadde/Sokak'], ['kapi', 'Kapı No']];
+function renderAddr() {
+  $('#addr').innerHTML = FIELDS.map(([k, lbl]) => {
+    if (k === 'kapi') return `<div class="f"><label>${lbl}</label><input id="kapiIn" type="text" value="${esc(sel.kapi?.name || '')}" placeholder="elle de yazabilirsiniz"><span></span></div>`;
+    const v = sel[k];
+    return `<div class="f"><label>${lbl}</label><div class="v ${v ? '' : 'none'}">${v ? esc(v.name) : '—'}</div>${v ? `<button title="Kaldır" data-clear="${k}">✕</button>` : '<span></span>'}</div>`;
+  }).join('');
+}
+function addrText() {
+  const s = sel, parts = [];
+  if (s.mahalle) parts.push(s.mahalle.name + ' Mah.');
+  if (s.sokak) parts.push(s.sokak.name);
+  if (s.kapi?.name) parts.push('No: ' + s.kapi.name);
+  const tail = [s.ilce?.name, s.il?.name].filter(Boolean).join(' / ');
+  return [parts.join(' '), tail].filter(Boolean).join(', ');
+}
+
+// Mahalle seçiliyse sokak listesi, sokak seçiliyse kapı numaraları
+let detailSeq = 0;
+async function loadDetail() {
+  const seq = ++detailSeq, box = $('#detail');
+  if (!cfg.apt) { box.innerHTML = ''; return; }
+  try {
+    if (sel.sokak?.code) {
+      box.innerHTML = `<h2>Kapı numaraları</h2><div class="pad" style="padding-top:0"><input id="doorQ" type="text" placeholder="Kapı no ara (örn. 12)"></div><div id="doorList"><div class="empty">Yükleniyor…</div></div>`;
+      await loadDoors('', seq);
+    } else if (sel.mahalle?.code) {
+      box.innerHTML = `<h2>${esc(sel.mahalle.name)} — sokaklar</h2><div class="pad" style="padding-top:0"><input id="strQ" type="text" placeholder="Sokak adında ara"></div><div id="strList"><div class="empty">Yükleniyor…</div></div>`;
+      const list = await aptAll(`neighborhoods/${sel.mahalle.code}/streets`);
+      if (seq !== detailSeq) return;
+      streetList = list.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'tr', { numeric: true }));
+      renderStreets('');
+    } else if (sel.ilce?.code) {
+      box.innerHTML = `<h2>${esc(sel.ilce.name)} — mahalleler</h2><div class="pad" style="padding-top:0"><input id="mahQ" type="text" placeholder="Mahalle adında ara"></div><div id="mahList"><div class="empty">Yükleniyor…</div></div>`;
+      mahList = await neighborhoods(sel.ilce.code);
+      if (seq !== detailSeq) return;
+      renderMahs('');
+    } else box.innerHTML = '';
+  } catch (e) { if (seq === detailSeq) box.insertAdjacentHTML('beforeend', `<div class="empty">${esc(aptErr(e))}</div>`); }
+}
+let streetList = [], mahList = [], doorList = [];
+function renderStreets(f) {
+  const n = norm(f), rows = streetList.map((s, i) => [s, i]).filter(([s]) => !n || norm(s.name).includes(n)).slice(0, 300);
+  $('#strList').innerHTML = rows.length ? rows.map(([s, i]) => `<button class="item" data-str="${i}"><b>${esc(title(s.name))}</b></button>`).join('') : '<div class="empty">Eşleşen sokak yok.</div>';
+}
+function renderMahs(f) {
+  const n = norm(f), rows = mahList.map((m, i) => [m, i]).filter(([m]) => !n || norm(mahLabel(m)).includes(n)).slice(0, 300);
+  $('#mahList').innerHTML = rows.length ? rows.map(([m, i]) => `<button class="item" data-mah="${i}"><b>${esc(mahLabel(m))}</b></button>`).join('') : '<div class="empty">Eşleşen mahalle yok.</div>';
+}
+async function loadDoors(q, seq = detailSeq) {
+  const j = await apt(`streets/${sel.sokak.code}/buildings`, { q, limit: 100 });
+  if (seq !== detailSeq || !$('#doorList')) return;
+  doorList = j.data || [];
+  $('#doorList').innerHTML = doorList.length
+    ? '<div class="chips">' + doorList.map((d, i) => `<button class="chip" data-door="${i}">${esc(d.doorNumber)}${d.label ? ' · ' + esc(d.label) : ''}</button>`).join('') + '</div>' + (j.meta?.nextCursor ? '<div class="empty">Daha fazla kayıt var; numarayı yazarak daraltın.</div>' : '')
+    : '<div class="empty">Kayıtlı kapı numarası bulunamadı; elle yazabilirsiniz.</div>';
+}
+
+/* ---------------- Haritadaki bir yer → mahalle + yakın sokaklar ---------------- */
+async function pickPoi(i) {
+  const p = poiItems[i];
+  document.querySelectorAll('[data-poi]').forEach(b => b.classList.toggle('on', +b.dataset.poi === i));
+  showPlace(p.lat, p.lon, p.name, p.addr);
+}
+async function showPlace(lat, lon, name, addr) {
+  const seq = ++placeSeq;
+  pin.setLatLng([lat, lon]).addTo(map);
+  map.setView([lat, lon], Math.max(map.getZoom(), 17));
+  const box = $('#place');
+  box.innerHTML = `<div class="place"><b>${esc(name || 'Seçilen nokta')}</b>Konum bilgisi alınıyor…</div>`;
+  try {
+    if (!addr) addr = (await nominatim('reverse', { lat, lon, zoom: 18 })).address || {};
+  } catch { addr = {}; }
+  if (seq !== placeSeq) return;
+  const g = { il: addr.province || addr.state, ilce: addr.town || addr.city_district || addr.county || addr.municipality || addr.city,
+    mahalle: addr.suburb || addr.neighbourhood || addr.quarter || addr.village || addr.hamlet, yol: addr.road || addr.pedestrian };
+  let note = '', patch = { il: g.il ? { name: g.il } : null, ilce: g.ilce ? { name: g.ilce } : null, mahalle: g.mahalle ? { name: g.mahalle.replace(/\s+Mahallesi$/i, '') } : null, sokak: null, kapi: null };
+  let mahCands = [];
+  if (cfg.apt) {
+    try { // harita bilgisini resmi kayıtlardaki il/ilçe/mahalle ile eşle
+      const vals = Object.values(addr).map(norm), mvals = Object.values(addr).map(mahNorm);
+      const prov = (await provinces()).find(p => vals.includes(norm(p.name)));
+      if (prov) {
+        patch.il = ref(prov);
+        const ds = await districts(prov.code);
+        const dist = ds.find(d => norm(d.name) !== 'merkez' && vals.includes(norm(d.name))) || ds.find(d => vals.includes(norm(d.name)));
+        if (dist) {
+          patch.ilce = ref(dist);
+          mahCands = (await neighborhoods(dist.code)).filter(n => mvals.includes(mahNorm(n.name)));
+          if (mahCands.length === 1) patch.mahalle = { code: mahCands[0].code, name: mahLabel(mahCands[0]) };
+          else { patch.mahalle = null; note = mahCands.length ? 'Aynı adda birden çok mahalle var, aşağıdan seçin.' : 'Mahalle resmi kayıtla otomatik eşleşmedi; aşağıdaki listeden seçin.'; }
+        }
+      }
+    } catch (e) { note = aptErr(e); }
+  }
+  if (seq !== placeSeq) return;
+  box.innerHTML = `<div class="place"><b>${esc(name || 'Seçilen nokta')}</b>Haritaya göre: ${esc([g.mahalle, g.ilce, g.il].filter(Boolean).join(', ') || 'bilgi yok')}${g.yol ? '<br>Üzerindeki yol: ' + esc(g.yol) : ''}${note ? '<br><i>' + esc(note) + '</i>' : ''}</div>`
+    + (mahCands.length > 1 ? '<div class="chips">' + mahCands.map(m => `<button class="chip" data-mahc="${esc(m.code)}" data-name="${esc(mahLabel(m))}">${esc(mahLabel(m))}</button>`).join('') + '</div>' : '')
+    + '<h2>Yakındaki sokaklar <small>müşteriye sorun</small></h2><div class="chips" id="near"><span class="hint">Yükleniyor…</span></div>';
+  setSel(patch);
+  try {
+    let near = await nearbyStreets(lat, lon);
+    if (seq !== placeSeq) return;
+    if (g.yol && !near.some(n => norm(n.name) === norm(g.yol))) near.unshift({ name: g.yol, d: 0 });
+    $('#near').innerHTML = near.length ? near.map(n => `<button class="chip" data-near="${esc(n.name)}">${esc(n.name)}${n.d ? ` <span style="color:var(--mute)">~${Math.round(n.d / 10) * 10} m</span>` : ''}</button>`).join('') : '<span class="hint">Yakında adı kayıtlı sokak yok.</span>';
+  } catch { if (seq === placeSeq) $('#near').innerHTML = '<span class="hint">Yakındaki sokaklar alınamadı.</span>'; }
+}
+// Yakındaki sokak adına tıklanınca resmi kayıtta o mahalle/ilçe içinde ara
+async function pickNear(name) {
+  if (!cfg.apt || !sel.ilce?.code) { setSel({ sokak: { name }, kapi: null }); return; }
+  const box = $('#detail'); ++detailSeq;
+  box.innerHTML = `<h2>"${esc(name)}" — resmi kayıtlar</h2><div class="empty">Aranıyor…</div>`;
+  try {
+    let res = sel.mahalle?.code ? await aptSearch(name, null, null, { neighborhoodCode: sel.mahalle.code, types: 'street' }) : [];
+    if (!res.length) res = await aptSearch(name, null, sel.ilce.code, { types: 'street' });
+    nearItems = res;
+    box.innerHTML = `<h2>"${esc(name)}" — resmi kayıtlar</h2>` + (res.length ? res.map((r, i) => aptRow(r, i).replace('data-apt', 'data-nearapt')).join('') : '<div class="empty">Bu ilçede bu adla kayıtlı sokak bulunamadı.</div>');
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(aptErr(e))}</div>`; }
+}
+let nearItems = [];
+
+/* ---------------- Harita ---------------- */
+const map = L.map('map').setView([39.0, 35.2], 6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap katkıda bulunanlar' }).addTo(map);
+const poiLayer = L.layerGroup().addTo(map);
+const pin = L.marker([0, 0]);
+map.on('click', e => { document.querySelectorAll('[data-poi]').forEach(b => b.classList.remove('on')); showPlace(e.latlng.lat, e.latlng.lng, 'Haritada seçilen nokta'); });
+
+/* ---------------- Olaylar ---------------- */
+$('#go').onclick = runSearch;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+$('#ilce').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+$('#il').addEventListener('change', fillIlce);
+async function fillIlce() {
+  $('#ilceList').innerHTML = '';
+  if (!cfg.apt) return;
+  try {
+    const p = (await provinces()).find(p => norm(p.name) === norm($('#il').value));
+    if (p) $('#ilceList').innerHTML = (await districts(p.code)).map(d => `<option value="${esc(title(d.name))}">`).join('');
+  } catch { }
+}
+let doorTimer;
+document.addEventListener('input', e => {
+  if (e.target.id === 'strQ') renderStreets(e.target.value);
+  else if (e.target.id === 'mahQ') renderMahs(e.target.value);
+  else if (e.target.id === 'kapiIn') sel.kapi = e.target.value.trim() ? { name: e.target.value.trim() } : null;
+  else if (e.target.id === 'doorQ') { clearTimeout(doorTimer); const v = e.target.value.trim(); doorTimer = setTimeout(() => loadDoors(v).catch(() => {}), 400); }
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.apt != null) pickApt(aptItems[+d.apt]);
+  else if (d.nearapt != null) pickApt(nearItems[+d.nearapt]);
+  else if (d.poi != null) pickPoi(+d.poi);
+  else if (d.str != null) setSel({ sokak: ref(streetList[+d.str]), kapi: null });
+  else if (d.mah != null) setSel({ mahalle: { code: mahList[+d.mah].code, name: mahLabel(mahList[+d.mah]) }, sokak: null, kapi: null });
+  else if (d.mahc != null) setSel({ mahalle: { code: d.mahc, name: d.name }, sokak: null, kapi: null });
+  else if (d.near != null) pickNear(d.near);
+  else if (d.door != null) { sel.kapi = { name: doorList[+d.door].doorNumber, code: doorList[+d.door].code }; renderAddr(); }
+  else if (d.clear) { const order = ['il', 'ilce', 'mahalle', 'sokak', 'kapi'], patch = {}; order.slice(order.indexOf(d.clear)).forEach(k => patch[k] = null); setSel(patch); }
+});
+$('#clear').onclick = () => { $('#place').innerHTML = ''; pin.remove(); setSel({ il: null, ilce: null, mahalle: null, sokak: null, kapi: null }); };
+$('#copy').onclick = async () => {
+  const t = addrText(); if (!t) return;
+  try { await navigator.clipboard.writeText(t); $('#copy').textContent = 'Kopyalandı'; } catch { prompt('Adres:', t); }
+  setTimeout(() => $('#copy').textContent = 'Kopyala', 1500);
+};
+
+/* ---------------- Başlangıç ---------------- */
+(async () => {
+  renderAddr();
+  try { cfg = await (await fetch('/api/config')).json(); } catch { }
+  if (!cfg.apt) {
+    $('#banner').hidden = false;
+    $('#banner').textContent = 'Resmi adres kayıtları şu an bağlı değil; yalnızca harita araması çalışıyor.';
+    return;
+  }
+  try { $('#ilList').innerHTML = (await provinces()).map(p => `<option value="${esc(title(p.name))}">`).join(''); }
+  catch (e) { $('#banner').hidden = false; $('#banner').textContent = aptErr(e); }
+})();
+</script>
+</body>
+</html>
