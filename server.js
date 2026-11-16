@@ -50,7 +50,7 @@ function cacheGet(k) { const c = cache.get(k); if (c && c.exp > Date.now()) retu
 function cachePut(k, body, minutes) { if (cache.size > 5000) cache.clear(); cache.set(k, { exp: Date.now() + minutes * 60000, body }); }
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin' });
   res.end(body);
 }
 const err = (res, status, code, message) => send(res, status, JSON.stringify({ error: { code, message } }));
