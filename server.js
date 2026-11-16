@@ -16,9 +16,11 @@ if (fs.existsSync(envFile)) {
   }
 }
 const PORT = +process.env.PORT || 3900;
-const KEYS = { apt: process.env.APITURKIYE_KEY || '', yandex: process.env.YANDEX_GEOCODER_KEY || '', google: process.env.GOOGLE_PLACES_KEY || '' };
+// Panelden yapıştırırken karışabilen boşluk ve tırnakları temizle
+const key = name => (process.env[name] || '').trim().replace(/^["']|["']$/g, '').trim();
+const KEYS = { apt: key('APITURKIYE_KEY'), yandex: key('YANDEX_GEOCODER_KEY'), google: key('GOOGLE_PLACES_KEY') };
 // Günlük tavanlar sağlayıcı limitinin biraz altında tutulur (Yandex limiti aşılırsa erişimi kalıcı kapatıyor).
-const DAILY = { apt: +process.env.APT_DAILY_MAX || 950, yandex: +process.env.YANDEX_DAILY_MAX || 900, google: +process.env.GOOGLE_DAILY_MAX || 300 };
+const DAILY = { apt: +process.env.APT_DAILY_MAX || 950, yandex: +process.env.YANDEX_DAILY_MAX || 900, google: +process.env.GOOGLE_DAILY_MAX || 160 } // Google: ayda 5.000 ücretsiz Text Search Pro; 160/gün bunun altında kalır;
 const PER_IP_PER_MIN = +process.env.RATE_PER_MIN || 40;
 const ROOT = path.join(__dirname, 'public');
 
