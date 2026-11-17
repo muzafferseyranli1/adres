@@ -109,7 +109,8 @@ function norm(s) {
     .replace(/[^a-z0-9]+/g, ' ').trim();
 }
 const mahNorm = s => norm(s).replace(/\b(mahallesi|mahalle|mah|mh|koyu|koy)\b/g, ' ').replace(/\s+/g, ' ').trim();
-const title = s => String(s ?? '').toLocaleLowerCase('tr').replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('tr'));
+// Kayıtlarda noktalı İ yerine düz I geliyor ("CADDESI"); "-esı" Türkçede olmaz, düzelt.
+const title = s => String(s ?? '').toLocaleLowerCase('tr').replace(/esı(?=$|[\s)\-.])/g, 'esi').replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('tr'));
 
 let cfg = { apt: false, yandex: false, google: false };
 let sel = { il: null, ilce: null, mahalle: null, sokak: null, kapi: null }; // her biri {code?, name}
@@ -225,8 +226,30 @@ async function detectScope(raw) {
       if (hit && cutWord(nq, norm(hit.name)).length >= 3) { out.dist = hit; nq = cutWord(nq, norm(hit.name)); out.auto.push(title(hit.name)); }
     }
   }
+  // İl yazılmamışsa ilçe adından il bul ("bağdat caddesi kadıköy" -> İstanbul / Kadıköy)
+  if (!out.prov) {
+    const idx = await districtIndex();
+    const want = ilceIn || null, hits = [];
+    for (const pr of idx) for (const d of pr.d) {
+      const nd = norm(d.n);
+      if (nd === 'merkez') continue;
+      if (want ? nd === want : (hasWord(nq, nd) && cutWord(nq, nd).length >= 3)) hits.push({ prov: { code: pr.p, name: pr.pn }, dist: { code: d.c, name: d.n }, len: nd.length });
+    }
+    const maxLen = Math.max(0, ...hits.map(h => h.len)), best = hits.filter(h => h.len === maxLen);
+    if (best.length === 1) { out.prov = best[0].prov; out.dist = best[0].dist; }
+    else if (best.length > 1 && best.length <= 3) out.alts = best;
+    if (best.length && best.length <= 3) {
+      if (!want) nq = cutWord(nq, norm(best[0].dist.name));
+      out.auto.push(title(best[0].dist.name) + (best.length === 1 ? ' (' + title(best[0].prov.name) + ')' : ''));
+    }
+  }
   if (out.auto.length) out.rest = nq;
   return out;
+}
+let distIdx = null;
+async function districtIndex() {
+  if (!distIdx) distIdx = fetch('/api/apt-index').then(r => r.ok ? r.json() : Promise.reject(new Error('index'))).then(j => j.data);
+  try { return await distIdx; } catch { distIdx = null; return []; }
 }
 
 /* ---------------- Arama ---------------- */
@@ -243,7 +266,9 @@ async function runSearch() {
     try {
       const sc = await detectScope(raw);
       if (seq !== searchSeq) return;
-      let res = await aptSearch(sc.rest, sc.prov?.code, sc.dist?.code);
+      let res = sc.alts
+        ? (await Promise.all(sc.alts.map(a => aptSearch(sc.rest, a.prov.code, a.dist.code)))).flat()
+        : await aptSearch(sc.rest, sc.prov?.code, sc.dist?.code);
       // Algılanan il/ilçe aslında sokak adının parçasıysa (örn. "Ankara Caddesi") kapsamsız tekrar dene
       if (!res.length && sc.auto.length) { res = await aptSearch(raw, null, null); sc.auto = []; }
       if (seq !== searchSeq) return;
@@ -393,7 +418,11 @@ async function showPlace(lat, lon, name, addr) {
         const dist = ds.find(d => norm(d.name) !== 'merkez' && vals.includes(norm(d.name))) || ds.find(d => vals.includes(norm(d.name)));
         if (dist) {
           patch.ilce = ref(dist);
-          mahCands = (await neighborhoods(dist.code)).filter(n => mvals.includes(mahNorm(n.name)));
+          const nbs = await neighborhoods(dist.code);
+          // Önce haritanın "mahalle" alanı; yoksa diğer alanlar (aksi halde ilçe adı da mahalle adıyla karışır)
+          const primary = [addr.suburb, addr.neighbourhood, addr.quarter, addr.village, addr.hamlet].filter(Boolean).map(mahNorm);
+          mahCands = nbs.filter(n => primary.includes(mahNorm(n.name)));
+          if (!mahCands.length && !primary.length) mahCands = nbs.filter(n => mvals.includes(mahNorm(n.name)));
           if (mahCands.length === 1) patch.mahalle = { code: mahCands[0].code, name: mahLabel(mahCands[0]) };
           else { patch.mahalle = null; note = mahCands.length ? 'Aynı adda birden çok mahalle var, aşağıdan seçin.' : 'Mahalle resmi kayıtla otomatik eşleşmedi; aşağıdaki listeden seçin.'; }
         }
