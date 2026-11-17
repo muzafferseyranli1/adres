@@ -248,8 +248,12 @@ async function detectScope(raw) {
 }
 let distIdx = null;
 async function districtIndex() {
-  if (!distIdx) distIdx = fetch('/api/apt-index').then(r => r.ok ? r.json() : Promise.reject(new Error('index'))).then(j => j.data);
-  try { return await distIdx; } catch { distIdx = null; return []; }
+  if (distIdx) return distIdx;
+  try { // 202 = sunucu dizini hâlâ kuruyor; o zaman ilçe algılama bu aramada atlanır, sonra tekrar denenir
+    const r = await fetch('/api/apt-index');
+    if (r.status === 200) distIdx = (await r.json()).data;
+  } catch { }
+  return distIdx || [];
 }
 
 /* ---------------- Arama ---------------- */

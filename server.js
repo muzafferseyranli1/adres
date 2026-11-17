@@ -74,25 +74,37 @@ const indexFile = path.join(path.dirname(usageFile), 'district-index.json');
 let distIndex = null, distBuilding = null;
 try { const j = JSON.parse(fs.readFileSync(indexFile, 'utf8')); if (Date.now() - j.t < 7 * 864e5) distIndex = j; } catch { }
 async function aptList(p) {
-  if (!spend('apt')) throw new Error('cap');
-  const r = await fetch('https://api.apiturkiye.com/v1/' + p, { headers: { 'X-API-Key': KEYS.apt }, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error('apt ' + r.status);
-  return (await r.json()).data || [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (!spend('apt')) throw new Error('cap');
+    const r = await fetch('https://api.apiturkiye.com/v1/' + p, { headers: { 'X-API-Key': KEYS.apt }, signal: AbortSignal.timeout(15000) });
+    if (r.status === 429) { // hız sınırı: bildirilen süre kadar bekle (en çok 65 sn), sonra tekrar dene
+      const wait = Math.min(65, +r.headers.get('retry-after') || 20);
+      console.log(`apiturkiye 429 (${p}); ${wait} sn beklenip tekrar denenecek`);
+      await new Promise(ok => setTimeout(ok, wait * 1000));
+      continue;
+    }
+    if (!r.ok) throw new Error('apt ' + r.status + ' ' + p);
+    return (await r.json()).data || [];
+  }
+  throw new Error('apt 429 (tekrar denemeler tükendi)');
 }
 async function buildDistrictIndex() {
   const provs = await aptList('provinces'), data = [];
-  for (let i = 0; i < provs.length; i += 5) {
-    data.push(...await Promise.all(provs.slice(i, i + 5).map(async pr => ({ p: pr.code, pn: pr.name, d: (await aptList(`provinces/${pr.code}/districts`)).map(d => ({ c: d.code, n: d.name })) }))));
+  for (const pr of provs) { // sırayla: hız sınırına takılmamak için
+    data.push({ p: pr.code, pn: pr.name, d: (await aptList(`provinces/${pr.code}/districts`)).map(d => ({ c: d.code, n: d.name })) });
   }
   const j = { t: Date.now(), data };
   try { fs.mkdirSync(path.dirname(indexFile), { recursive: true }); fs.writeFileSync(indexFile, JSON.stringify(j)); } catch { }
+  console.log('İlçe dizini hazır:', data.length, 'il');
   return j;
 }
+// Dizin hazır değilse arka planda oluşturulur; istekler beklemez (hazır olana dek ilçe algılama kapalı kalır).
 function getDistrictIndex() {
-  if (distIndex) return Promise.resolve(distIndex);
-  if (!distBuilding) distBuilding = buildDistrictIndex().then(j => (distIndex = j), e => { throw e; }).finally(() => { distBuilding = null; });
-  return distBuilding;
+  if (distIndex) return distIndex;
+  if (!distBuilding && KEYS.apt) distBuilding = buildDistrictIndex().then(j => { distIndex = j; }, e => console.error('İlçe dizini kurulamadı:', e.message)).finally(() => { distBuilding = null; });
+  return null;
 }
+setTimeout(getDistrictIndex, 3000).unref();
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -110,8 +122,8 @@ http.createServer(async (req, res) => {
       // İl + ilçe dizini (sorguda yalnızca ilçe geçince ilini bulmak için); haftada bir ~82 istek harcar
       if (p === '/api/apt-index') {
         if (!KEYS.apt) return err(res, 503, 'no_key', 'APITURKIYE_KEY tanımlı değil.');
-        try { return send(res, 200, JSON.stringify(await getDistrictIndex())); }
-        catch (e) { return err(res, e.message === 'cap' ? 429 : 502, e.message === 'cap' ? 'daily_cap' : 'upstream_unreachable', 'İlçe dizini alınamadı.'); }
+        const idx = getDistrictIndex();
+        return idx ? send(res, 200, JSON.stringify(idx)) : send(res, 202, JSON.stringify({ building: true }));
       }
 
       // apiturkiye.com: /api/apt/<yol>?<sorgu> -> https://api.apiturkiye.com/v1/<yol>?<sorgu>
