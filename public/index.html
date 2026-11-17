@@ -110,7 +110,7 @@ function norm(s) {
 }
 const mahNorm = s => norm(s).replace(/\b(mahallesi|mahalle|mah|mh|koyu|koy)\b/g, ' ').replace(/\s+/g, ' ').trim();
 // Kayıtlarda noktalı İ yerine düz I geliyor ("CADDESI"); "-esı" Türkçede olmaz, düzelt.
-const title = s => String(s ?? '').toLocaleLowerCase('tr').replace(/esı(?=$|[\s)\-.])/g, 'esi').replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('tr'));
+const title = s => String(s ?? '').toLocaleLowerCase('tr').replace(/esı(?=$|[\s)\-.])/g, 'esi').replace(/sokagı(?=$|[\s)\-.])/g, 'sokağı').replace(/(^|[\s\-.(])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase('tr'));
 
 let cfg = { apt: false, yandex: false, google: false };
 let sel = { il: null, ilce: null, mahalle: null, sokak: null, kapi: null }; // her biri {code?, name}
